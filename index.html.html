@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Space Invaders</title>
+    <!-- スマホアプリ（PWA）化のための設定 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background-color: #111;
+            color: white;
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 100vh;
+            overflow: hidden;
+            padding: 10px;
+        }
+        #game-container {
+            position: relative;
+            width: 100%;
+            max-width: 400px;
+            aspect-ratio: 3 / 4;
+            background: #000;
+            border: 2px solid #333;
+            border-radius: 8px;
+        }
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        /* スマホ用コントローラー */
+        #controls {
+            display: flex;
+            width: 100%;
+            max-width: 400px;
+            justify-content: space-between;
+            padding: 10px 0 20px 0;
+        }
+        .btn {
+            background: #333;
+            color: white;
+            border: none;
+            padding: 20px;
+            font-size: 20px;
+            font-weight: bold;
+            border-radius: 10px;
+            active-background: #555;
+            touch-action: manipulation;
+        }
+        .btn:active {
+            background: #555;
+        }
+        #move-controls {
+            display: flex;
+            gap: 10px;
+        }
+        #btn-shoot {
+            background: #ff3333;
+            width: 80px;
+        }
+        #btn-shoot:active {
+            background: #ff6666;
+        }
+        #score-board {
+            font-size: 18px;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="score-board">SCORE: <span id="score">0</span></div>
+    
+    <div id="game-container">
+        <canvas id="gameCanvas" width="300" height="400"></canvas>
+    </div>
+
+    <!-- スマホ用操作ボタン -->
+    <div id="controls">
+        <div id="move-controls">
+            <button class="btn" id="btn-left">◀</button>
+            <button class="btn" id="btn-right">▶</button>
+        </div>
+        <button class="btn" id="btn-shoot">FIRE</button>
+    </div>
+
+    <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const scoreEl = document.getElementById("score");
+
+        // ゲーム状態
+        let score = 0;
+        let gameOver = false;
+
+        // プレイヤー設定
+        const player = {
+            x: canvas.width / 2 - 10,
+            y: canvas.height - 30,
+            width: 20,
+            height: 15,
+            speed: 4,
+            isMovingLeft: false,
+            isMovingRight: false
+        };
+
+        // 弾設定
+        let bullets = [];
+        const bulletSpeed = 6;
+
+        // インベーダー設定
+        const invaderRows = 3;
+        const invaderCols = 6;
+        const invaderWidth = 20;
+        const invaderHeight = 15;
+        let invaders = [];
+        let invaderDirection = 1; // 1: 右, -1: 左
+        let invaderSpeed = 0.5;
+
+        // インベーダーの初期化
+        function initInvaders() {
+            invaders = [];
+            for (let r = 0; r < invaderRows; r++) {
+                for (let c = 0; c < invaderCols; c++) {
+                    invaders.push({
+                        x: c * (invaderWidth + 15) + 30,
+                        y: r * (invaderHeight + 15) + 40,
+                        width: invaderWidth,
+                        height: invaderHeight,
+                        alive: true
+                    });
+                }
+            }
+        }
+
+        // 弾の発射
+        function shoot() {
+            if (gameOver) {
+                resetGame();
+                return;
+            }
+            if (bullets.length < 3) { // 画面内に最大3発まで
+                bullets.push({ x: player.x + player.width / 2 - 2, y: player.y, width: 4, height: 10 });
+            }
+        }
+
+        // リセット
+        function resetGame() {
+            score = 0;
+            scoreEl.innerText = score;
+            gameOver = false;
+            player.x = canvas.width / 2 - 10;
+            bullets = [];
+            invaderSpeed = 0.5;
+            initInvaders();
+            loop();
+        }
+
+        // コントローラーイベント（スマホ用タッチ）
+        const setupTouchBtn = (id, startAction, endAction) => {
+            const btn = document.getElementById(id);
+            btn.addEventListener("touchstart", (e) => { e.preventDefault(); startAction(); });
+            btn.addEventListener("touchend", (e) => { e.preventDefault(); endAction(); });
+            // PCでのクリックテスト用
+            btn.addEventListener("mousedown", startAction);
+            btn.addEventListener("mouseup", endAction);
+        };
+
+        setupTouchBtn("btn-left", () => player.isMovingLeft = true, () => player.isMovingLeft = false);
+        setupTouchBtn("btn-right", () => player.isMovingRight = true, () => player.isMovingRight = false);
+        
+        document.getElementById("btn-shoot").addEventListener("touchstart", (e) => { e.preventDefault(); shoot(); });
+        document.getElementById("btn-shoot").addEventListener("mousedown", shoot);
+
+        // キーボード操作（PC用）
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "ArrowLeft" || e.key === "a") player.isMovingLeft = true;
+            if (e.key === "ArrowRight" || e.key === "d") player.isMovingRight = true;
+            if (e.key === " " || e.key === "ArrowUp") shoot();
+        });
+        window.addEventListener("keyup", (e) => {
+            if (e.key === "ArrowLeft" || e.key === "a") player.isMovingLeft = false;
+            if (e.key === "ArrowRight" || e.key === "d") player.isMovingRight = false;
+        });
+
+        // 更新処理
+        function update() {
+            if (gameOver) return;
+
+            // プレイヤー移動
+            if (player.isMovingLeft && player.x > 0) player.x -= player.speed;
+            if (player.isMovingRight && player.x < canvas.width - player.width) player.x += player.speed;
+
+            // 弾の移動
+            bullets.forEach((b, index) => {
+                b.y -= bulletSpeed;
+                if (b.y < 0) bullets.splice(index, 1); // 画面外に出たら削除
+            });
+
+            // インベーダー移動
+            let hitWall = false;
+            invaders.forEach(inv => {
+                if (!inv.alive) return;
+                inv.x += invaderSpeed * invaderDirection;
+                if (inv.x + inv.width > canvas.width || inv.x < 0) {
+                    hitWall = true;
+                }
+                // プレイヤーの防衛線越えチェック
+                if (inv.y + inv.height >= player.y) {
+                    gameOver = true;
+                }
+            });
+
+            if (hitWall) {
+                invaderDirection *= -1;
+                invaders.forEach(inv => {
+                    if (inv.alive) inv.y += 10; // 下に下がる
+                });
+            }
+
+            // 当たり判定
+            bullets.forEach((b, bIdx) => {
+                invaders.forEach(inv => {
+                    if (!inv.alive) return;
+                    if (b.x < inv.x + inv.width && b.x + b.width > inv.x && b.y < inv.y + inv.height && b.y + b.height > inv.y) {
+                        inv.alive = false;
+                        bullets.splice(bIdx, 1);
+                        score += 10;
+                        scoreEl.innerText = score;
+                    }
+                });
+            });
+
+            // 全滅チェック
+            if (invaders.every(inv => !inv.alive)) {
+                invaderSpeed += 0.2; // スピードアップして次ステージへ
+                initInvaders();
+            }
+        }
+
+        // 描画処理
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (gameOver) {
+                ctx.fillStyle = "white";
+                ctx.font = "20px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("GAME OVER", canvas.width / 2, canvas.height / 2 - 10);
+                ctx.font = "14px sans-serif";
+                ctx.fillText("TAP FIRE TO RESTART", canvas.width / 2, canvas.height / 2 + 20);
+                return;
+            }
+
+            // プレイヤー (緑の自機)
+            ctx.fillStyle = "#00ff00";
+            ctx.fillRect(player.x, player.y, player.width, player.height);
+
+            // 弾 (黄色)
+            ctx.fillStyle = "#ffff00";
+            bullets.forEach(b => ctx.fillRect(b.x, b.y, b.width, b.height));
+
+            // インベーダー (白)
+            ctx.fillStyle = "#ffffff";
+            invaders.forEach(inv => {
+                if (inv.alive) ctx.fillRect(inv.x, inv.y, inv.width, inv.height);
+            });
+        }
+
+        function loop() {
+            update();
+            draw();
+            if (!gameOver) requestAnimationFrame(loop);
+        }
+
+        // 開始
+        initInvaders();
+        loop();
+    </script>
+</body>
+</html>
